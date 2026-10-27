@@ -14,5 +14,11 @@ module.exports = defineConfig({
   use: {
     // Base URL, so tests can use short paths like '/api/users'
     baseURL: 'https://reqres.in',
+
+    // Headers sent automatically with EVERY API request in every test.
+    // The key comes from your private .env file, never typed in the code.
+    extraHTTPHeaders: {
+      'x-api-key': process.env.REQRES_API_KEY || '',
+    },
   },
 });

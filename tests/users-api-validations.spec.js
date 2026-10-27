@@ -1,6 +1,10 @@
 // Import the Playwright test tools
 const { test, expect } = require('@playwright/test');
 
+// Read your private key from the .env file (loaded by playwright.config.js).
+// The key itself is never written in this file, so it is safe to publish.
+const apiKey = process.env.REQRES_API_KEY;
+
 // This file shows many different kinds of assertions.
 // It sends only ONE request and reuses the result, which also avoids rate limit (429) errors.
 test.describe('Users API validations', () => {
@@ -9,12 +13,12 @@ test.describe('Users API validations', () => {
   let rawBody;  // the response body as raw bytes (used for the size check)
 
   // beforeAll runs once before all tests in this group.
-  // The Postman equivalent is the setup you do before running a collection.
   test.beforeAll(async ({ playwright }) => {
-    // "request" is not available inside beforeAll, so we create our own API client
+    // "request" is not available inside beforeAll, so we create our own API client.
+    // This client does not copy the config headers, so we add the key here ourselves.
     const apiContext = await playwright.request.newContext({
       baseURL: 'https://reqres.in',
-      extraHTTPHeaders: { 'x-api-key': 'reqres-free-v1' },
+      extraHTTPHeaders: { 'x-api-key': apiKey || '' },
     });
 
     response = await apiContext.get('/api/users?page=2');
