@@ -1,101 +1,139 @@
-// Import the Playwright test tools
+// Import the Playwright test tools:
+// "test" defines a test case, "expect" checks results (assertions)
 const { test, expect } = require('@playwright/test');
 
-// Read your private key from the .env file (loaded by playwright.config.js).
-// The key itself is never written in this file, so it is safe to publish.
-const apiKey = process.env.REQRES_API_KEY;
+// Group all user-related tests together under one name in the report
+test.describe('Users API', () => {
 
-// This file shows many different kinds of assertions.
-// It sends only ONE request and reuses the result, which also avoids rate limit (429) errors.
-test.describe('Users API validations', () => {
-  let response; // the raw response from the server
-  let body;     // the response body converted to a JavaScript object
-  let rawBody;  // the response body as raw bytes (used for the size check)
+  // ---------- GET: read data ----------
+  test('GET list of users returns 200 and correct page', async ({ request }) => {
+    // "request" is Playwright's built-in API client.
+    // The base URL and the API key header both come from playwright.config.js
+    const response = await request.get('/api/users?page=2');
 
-  // beforeAll runs once before all tests in this group.
-  test.beforeAll(async ({ playwright }) => {
-    // "request" is not available inside beforeAll, so we create our own API client.
-    // This client does not copy the config headers, so we add the key here ourselves.
-    const apiContext = await playwright.request.newContext({
-      baseURL: 'https://reqres.in',
-      extraHTTPHeaders: { 'x-api-key': apiKey || '' },
+    // Check the HTTP status code is 200 (OK)
+    expect(response.status()).toBe(200);
+
+    // Convert the response body from JSON text into a JavaScript object
+    const body = await response.json();
+
+    // Check the "page" field in the response equals 2
+    expect(body.page).toBe(2);
+    // Check the "data" list is not empty
+    expect(body.data.length).toBeGreaterThan(0);
+  });
+
+  // ---------- POST: create data ----------
+  test('POST create user returns 201 with name and job', async ({ request }) => {
+    // "data" is the JSON body we send to the server
+    const response = await request.post('/api/users', {
+      data: {
+        name: 'Star',
+        job: 'QA Engineer',
+      },
     });
 
-    response = await apiContext.get('/api/users?page=2');
-    rawBody = await response.body();
-    body = JSON.parse(rawBody.toString());
+    // 201 means "Created"
+    expect(response.status()).toBe(201);
 
-    // Close the client when finished
-    await apiContext.dispose();
+    const body = await response.json();
+    // The server should echo back what we sent
+    expect(body.name).toBe('Star');
+    expect(body.job).toBe('QA Engineer');
+    // The server should generate an id for the new user
+    expect(body.id).toBeDefined();
   });
 
-  // ---------- 1. STATUS CODE: allow several values ----------
-  test('status code is one of the allowed values', async () => {
-    // Passes if the status is 200 OR 201
-    expect([200, 201]).toContain(response.status());
-    // ok() is true for any status from 200 to 299
-    expect(response.ok()).toBeTruthy();
-  });
-
-  // ---------- 2. COMPARISONS: equal, lower, higher ----------
-  test('comparison assertions on size and numbers', async () => {
-    const size = rawBody.length; // response size in bytes
-
-    expect(size).toBeGreaterThan(0);          // higher than
-    expect(size).toBeGreaterThanOrEqual(1);   // higher than or equal
-    expect(size).toBeLessThan(10000);         // lower than
-    expect(size).toBeLessThanOrEqual(10000);  // lower than or equal
-    expect(body.page).toBe(2);                // exactly equal
-    expect(body.page).not.toBe(1);            // NOT equal
-  });
-
-  // ---------- 3. DATA TYPES ----------
-  test('fields have the correct data types', async () => {
-    const firstUser = body.data[0];
-
-    expect(typeof firstUser.id).toBe('number');         // id is a number
-    expect(Number.isInteger(firstUser.id)).toBe(true);  // id is a whole number
-    expect(typeof firstUser.email).toBe('string');      // email is text
-    expect(Array.isArray(body.data)).toBe(true);        // data is a list
-  });
-
-  // ---------- 4. ARRAYS AND OBJECTS ----------
-  test('array and object assertions', async () => {
-    // The list length should match the per_page value the server reports
-    expect(body.data).toHaveLength(body.per_page);
-
-    // The first user should contain at least these fields with these types
-    expect(body.data[0]).toMatchObject({
-      id: expect.any(Number),
-      email: expect.any(String),
-      first_name: expect.any(String),
+  // ---------- PUT: update data ----------
+  test('PUT update user returns 200 with updated job', async ({ request }) => {
+    // Update user number 2 with a new job title
+    const response = await request.put('/api/users/2', {
+      data: {
+        name: 'Star',
+        job: 'Senior QA Engineer',
+      },
     });
 
-    // The list should contain a user object with an email field
-    expect(body.data).toContainEqual(
-      expect.objectContaining({ email: expect.any(String) })
-    );
+    expect(response.status()).toBe(200);
 
-    // Loop through EVERY user and check each one
-    for (const user of body.data) {
-      expect(user.email).toContain('@');
-      expect(user.id).toBeGreaterThan(0);
-    }
+    const body = await response.json();
+    // The response should show the new job
+    expect(body.job).toBe('Senior QA Engineer');
+    // The server adds a timestamp showing when it was updated
+    expect(body.updatedAt).toBeDefined();
   });
 
-  // ---------- 5. NEGATIVE ASSERTIONS ----------
-  test('negative assertions using not', async () => {
-    expect(body.error).toBeUndefined();        // there should be no error field
-    expect(body.data).not.toHaveLength(0);     // the list should not be empty
-    expect(response.status()).not.toBe(500);   // no server error
+  // ---------- DELETE: remove data ----------
+  test('DELETE user returns 204', async ({ request }) => {
+    const response = await request.delete('/api/users/2');
+
+    // 204 means "No Content": deleted successfully, nothing to return
+    expect(response.status()).toBe(204);
   });
 
-  // ---------- 6. SOFT ASSERTIONS ----------
-  test('soft assertions keep going after a failure', async () => {
-    // A normal expect stops the test at the first failure.
-    // expect.soft records the failure but continues, so you see ALL problems at once.
-    expect.soft(response.status()).toBe(200);
-    expect.soft(body.page).toBe(2);
-    expect.soft(body.per_page).toBeGreaterThan(0);
+  // ---------- NEGATIVE TESTS: check that errors are handled ----------
+  test('GET single user that does not exist returns 404', async ({ request }) => {
+    // User 9999 does not exist, so we expect "Not Found"
+    const response = await request.get('/api/users/9999');
+
+    expect(response.status()).toBe(404);
+  });
+
+  test('POST login without password returns 400 with error message', async ({ request }) => {
+    // We deliberately leave out the password to trigger an error
+    const response = await request.post('/api/login', {
+      data: {
+        email: 'peter@klaven',
+      },
+    });
+
+    // 400 means "Bad Request": the server rejected our incomplete data
+    expect(response.status()).toBe(400);
+
+    const body = await response.json();
+    // The server should tell us exactly what was missing
+    expect(body.error).toBe('Missing password');
+  });
+
+  // ---------- HEADER AND RESPONSE TIME CHECKS ----------
+  test('GET users returns JSON content type and responds within 3 seconds', async ({ request }) => {
+    // Record the time before sending the request (in milliseconds)
+    const startTime = Date.now();
+
+    const response = await request.get('/api/users?page=2');
+
+    // Work out how long the request took
+    const responseTime = Date.now() - startTime;
+
+    // Headers are the extra info sent with the response.
+    // Check the content type says the body is JSON
+    expect(response.headers()['content-type']).toContain('application/json');
+
+    // Check the response came back in under 3000 milliseconds
+    expect(responseTime).toBeLessThan(3000);
+  });
+
+  // ---------- RESPONSE SIZE CHECK ----------
+  test('GET users response body is not empty and within a sensible size', async ({ request }) => {
+    const response = await request.get('/api/users?page=2');
+
+    // "body()" gives the raw response as a buffer of bytes.
+    // Its length is the response size in bytes.
+    const rawBody = await response.body();
+    const sizeInBytes = rawBody.length;
+
+    // The response should contain something, but not be unexpectedly huge
+    expect(sizeInBytes).toBeGreaterThan(0);
+    expect(sizeInBytes).toBeLessThan(10000);
+  });
+
+  // ---------- API KEY CHECK ----------
+  test('GET users with the API key from the config returns 200', async ({ request }) => {
+    // No header is written here: playwright.config.js adds the
+    // x-api-key header (read from your private .env file) to every request.
+    const response = await request.get('/api/users?page=2');
+
+    // With a valid key, we expect a successful response
+    expect(response.status()).toBe(200);
   });
 });
